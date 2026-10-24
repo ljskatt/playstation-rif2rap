@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "static-out", "runtimeExecutable": "npx", "runtimeArgs": ["-y", "serve@14.2.4", "out", "-l", "4173"], "port": 4173 }
+  ]
+}
