@@ -14,25 +14,35 @@ import {
   toHex,
   type RapResult,
 } from "@/lib/rif2rap";
+import { GAME_FILE_HEAD_SIZE, inspectGameFile, looksLikeGameFile, type GameFileInfo } from "@/lib/verify";
 
 interface LoadedFile {
   name: string;
+  size: number;
+  /** The whole file, or only its first GAME_FILE_HEAD_SIZE bytes for big game files. */
   bytes: Uint8Array;
 }
 
-type Slot = "rif" | "act" | "idps";
+type Slot = "rif" | "act" | "idps" | "game";
 
 async function readFile(file: File): Promise<LoadedFile> {
-  return { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) };
+  const bytes = new Uint8Array(await file.slice(0, GAME_FILE_HEAD_SIZE).arrayBuffer());
+  return { name: file.name, size: file.size, bytes };
 }
 
 function classify(file: LoadedFile): Slot | null {
   const name = file.name.toLowerCase();
-  if (name.endsWith(".rif") || file.bytes.length === RIF_SIZE) return "rif";
-  if (name === "act.dat" || file.bytes.length === ACT_DAT_SIZE) return "act";
-  if (name.includes("idps") || file.bytes.length === IDPS_SIZE) return "idps";
+  if (looksLikeGameFile(file.bytes)) return "game";
+  if (name.endsWith(".rif") || file.size === RIF_SIZE) return "rif";
+  if (name === "act.dat" || file.size === ACT_DAT_SIZE) return "act";
+  if (name.includes("idps") || file.size === IDPS_SIZE) return "idps";
   return null;
 }
+
+type GameCheck =
+  | { file: LoadedFile; status: "error" | "unusable"; message: string }
+  | { file: LoadedFile; status: "no-rap"; info: GameFileInfo }
+  | { file: LoadedFile; status: "valid" | "invalid"; info: GameFileInfo; rap: RapResult };
 
 function download(name: string, data: Uint8Array) {
   const url = URL.createObjectURL(new Blob([data as BlobPart], { type: "application/octet-stream" }));
@@ -68,11 +78,18 @@ function sanitizeIdpsInput(raw: string): string {
 
 type RifOutcome = { file: LoadedFile; result?: RapResult; error?: string };
 
+function mergeByName(prev: LoadedFile[], added: LoadedFile[]): LoadedFile[] {
+  const byName = new Map(prev.map((f) => [f.name, f]));
+  for (const f of added) byName.set(f.name, f);
+  return [...byName.values()];
+}
+
 export default function Converter() {
   const [rifs, setRifs] = useState<LoadedFile[]>([]);
   const [actDat, setActDat] = useState<LoadedFile | null>(null);
   const [idpsText, setIdpsText] = useState("");
   const [idpsSource, setIdpsSource] = useState<string | null>(null);
+  const [gameFiles, setGameFiles] = useState<LoadedFile[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
@@ -82,9 +99,11 @@ export default function Converter() {
     const ignored: string[] = [];
     const badIdps: string[] = [];
     const newRifs: LoadedFile[] = [];
+    const newGameFiles: LoadedFile[] = [];
     for (const f of loaded) {
       const slot = forced ?? classify(f);
       if (slot === "rif") newRifs.push(f);
+      else if (slot === "game") newGameFiles.push(f);
       else if (slot === "act") setActDat(f);
       else if (slot === "idps") {
         try {
@@ -95,13 +114,8 @@ export default function Converter() {
         }
       } else ignored.push(f.name);
     }
-    if (newRifs.length) {
-      setRifs((prev) => {
-        const byName = new Map(prev.map((r) => [r.name, r]));
-        for (const r of newRifs) byName.set(r.name, r);
-        return [...byName.values()];
-      });
-    }
+    if (newRifs.length) setRifs((prev) => mergeByName(prev, newRifs));
+    if (newGameFiles.length) setGameFiles((prev) => mergeByName(prev, newGameFiles));
     const notices: string[] = [];
     if (ignored.length) {
       notices.push(
@@ -147,7 +161,24 @@ export default function Converter() {
     });
   }, [ready, rifs, actDat, idps.value]);
 
-  const successes = outcomes.filter((o) => o.result).map((o) => o.result!);
+  const successes = useMemo(() => outcomes.filter((o) => o.result).map((o) => o.result!), [outcomes]);
+
+  const gameChecks: GameCheck[] = useMemo(
+    () =>
+      gameFiles.map((file): GameCheck => {
+        let info: GameFileInfo;
+        try {
+          info = inspectGameFile(file.bytes);
+        } catch (e) {
+          return { file, status: "error", message: e instanceof Error ? e.message : String(e) };
+        }
+        if (info.unusable) return { file, status: "unusable", message: info.unusable };
+        const rap = successes.find((r) => r.contentId === info.contentId);
+        if (!rap) return { file, status: "no-rap", info };
+        return { file, status: info.check(rap.klicensee) ? "valid" : "invalid", info, rap };
+      }),
+    [gameFiles, successes],
+  );
 
   const downloadAll = () => {
     const entries: Record<string, Uint8Array> = {};
@@ -177,6 +208,7 @@ export default function Converter() {
     setActDat(null);
     setIdpsText("");
     setIdpsSource(null);
+    setGameFiles([]);
     setNotice(null);
   };
 
@@ -190,7 +222,7 @@ export default function Converter() {
     >
       {dragging && (
         <div className="pointer-events-none absolute -inset-3 z-10 grid place-items-center rounded-2xl border-2 border-dashed border-sky-400 bg-sky-950/70 backdrop-blur-sm">
-          <p className="text-lg font-medium text-sky-100">Drop .rif, act.dat and IDPS files anywhere</p>
+          <p className="text-lg font-medium text-sky-100">Drop .rif, act.dat, IDPS or game files anywhere</p>
         </div>
       )}
 
@@ -287,7 +319,7 @@ export default function Converter() {
                 Download all ({successes.length}) as .zip
               </button>
             )}
-            {(rifs.length > 0 || actDat || idpsText) && (
+            {(rifs.length > 0 || actDat || idpsText || gameFiles.length > 0) && (
               <button
                 onClick={reset}
                 className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
@@ -316,6 +348,7 @@ export default function Converter() {
                           Warning: this .rif belongs to a different account than act.dat; the .rap will likely not work.
                         </p>
                       )}
+                      <VerifiedBadge checks={gameChecks.filter((c) => "rap" in c && c.rap === result)} />
                     </>
                   ) : (
                     <>
@@ -337,8 +370,89 @@ export default function Converter() {
           </ul>
         )}
       </section>
+
+      <section className="mt-6 rounded-xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-xl">
+            <h2 className="text-lg font-semibold text-slate-100">
+              Check against the game <span className="text-sm font-normal text-slate-500">(optional)</span>
+            </h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Add the game&apos;s <span className="font-mono text-slate-300">EBOOT.BIN</span> or any{" "}
+              <span className="font-mono text-slate-300">.edat</span> from its{" "}
+              <span className="font-mono text-slate-300">USRDIR</span> folder to confirm the .rap key is correct before
+              starting RPCS3. Only the first 1 MB of each file is read.
+            </p>
+          </div>
+          <FilePicker
+            label="Choose game files"
+            accept=".bin,.edat,.sprx,.self"
+            multiple
+            onFiles={(f) => addFiles(f, "game")}
+          />
+        </div>
+
+        {gameChecks.length > 0 && (
+          <ul className="divide-y divide-slate-800">
+            {gameChecks.map((c) => (
+              <li key={c.file.name} className="flex items-start justify-between gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono text-sm text-slate-100" title={c.file.name}>
+                    {c.file.name}
+                  </p>
+                  <GameCheckStatus check={c} />
+                </div>
+                <button
+                  onClick={() => setGameFiles((prev) => prev.filter((p) => p.name !== c.file.name))}
+                  className="shrink-0 text-slate-500 hover:text-rose-400"
+                  aria-label={`Remove ${c.file.name}`}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
+}
+
+function GameCheckStatus({ check }: { check: GameCheck }) {
+  switch (check.status) {
+    case "valid":
+      return <p className="text-xs text-emerald-400">✓ The .rap key for {check.info.contentId} matches this file.</p>;
+    case "invalid":
+      return (
+        <p className="text-xs text-rose-400">
+          ✗ Wrong key for {check.info.contentId}. Check that the IDPS and act.dat come from the console this .rif was
+          activated on.
+        </p>
+      );
+    case "no-rap":
+      return (
+        <p className="text-xs text-slate-400">
+          Needs the .rap for <span className="font-mono">{check.info.contentId}</span>. Add its .rif, act.dat and IDPS
+          above.
+        </p>
+      );
+    case "unusable":
+      return <p className="text-xs text-slate-400">{check.message}</p>;
+    case "error":
+      return <p className="text-xs text-rose-400">{check.message}</p>;
+  }
+}
+
+function VerifiedBadge({ checks }: { checks: GameCheck[] }) {
+  const valid = checks.filter((c) => c.status === "valid");
+  const invalid = checks.filter((c) => c.status === "invalid");
+  if (invalid.length) {
+    return <p className="text-xs text-rose-400">✗ Rejected by {invalid.map((c) => c.file.name).join(", ")}</p>;
+  }
+  if (valid.length) {
+    return <p className="text-xs text-emerald-400">✓ Verified with {valid.map((c) => c.file.name).join(", ")}</p>;
+  }
+  return null;
 }
 
 function Step({

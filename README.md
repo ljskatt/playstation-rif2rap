@@ -18,6 +18,23 @@ file ever leaves the user's machine and the site needs no backend.
 
 Every result is checked by running it back through a port of `rap_to_rif()`.
 
+### Checking a .rap against the game
+
+`src/lib/verify.ts` can confirm a klicensee against a file from the game, the
+same way RPCS3 does:
+
+- **.edat**: CMAC of the first 0xA0 header bytes keyed with the klicensee must
+  match the header hash at 0xA0 (`check_data` in RPCS3's `unedat.cpp`).
+- **EBOOT.BIN / .sprx (NPDRM SELF)**: the klicensee unwraps the metadata info,
+  whose key and IV padding must decrypt to zero (`LoadMetadata` in `unself.cpp`).
+
+SDAT files and free-license content don't use a .rap, so they can't be used
+for the check. Only the first 1 MB of each game file is read.
+
+The SELF path can be tested against real files: homebrew `EBOOT.BIN`s are
+free-license NPDRM SELFs, so `REAL_SELF_DIR=/path/to/ebootdir npm test` checks
+that they validate with the free klicensee.
+
 ## Development
 
 ```bash

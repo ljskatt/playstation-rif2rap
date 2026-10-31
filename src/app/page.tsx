@@ -31,6 +31,11 @@ export default function Home() {
               either as a 16-byte <code className="font-mono text-xs text-slate-300">idps.bin</code> or as 32 hex
               characters.
             </li>
+            <li>
+              <span className="text-slate-300">EBOOT.BIN / .edat</span> (optional check):{" "}
+              <code className="font-mono text-xs text-slate-300">/dev_hdd0/game/TITLEID/USRDIR/</code> on the PS3, or
+              the same path inside RPCS3 after installing the game&apos;s .pkg.
+            </li>
           </ul>
         </div>
         <div>
