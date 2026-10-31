@@ -1,5 +1,7 @@
 # rif2rap-web
 
+**Live: [rif2rap.ljskatt.no](https://rif2rap.ljskatt.no)**
+
 A static website that converts PS3 `.rif` licenses into `.rap` files for RPCS3.
 Give it your `.rif` file(s), `act.dat` and console IDPS; it hands back one `.rap`
 per license, named after the content ID. All crypto runs in the browser, so no
@@ -31,9 +33,14 @@ same way RPCS3 does:
 SDAT files and free-license content don't use a .rap, so they can't be used
 for the check. Only the first 1 MB of each game file is read.
 
-The SELF path can be tested against real files: homebrew `EBOOT.BIN`s are
-free-license NPDRM SELFs, so `REAL_SELF_DIR=/path/to/ebootdir npm test` checks
-that they validate with the free klicensee.
+The SELF path can also be tested against real files: homebrew `EBOOT.BIN`s are
+free-license NPDRM SELFs, so they should validate with the free klicensee. No
+game files are included in this repo, so that test is skipped unless you point
+`REAL_SELF_DIR` at a folder of them:
+
+```bash
+REAL_SELF_DIR=./my-eboots npm test
+```
 
 ## Development
 
@@ -45,5 +52,6 @@ npm run build   # static site in ./out
 ```
 
 Upload the contents of `out/` to any static host (GitHub Pages, Netlify,
-Cloudflare Pages, nginx, ...). To host under a sub-path, build with
-`BASE_PATH=/rif2rap-web npm run build`.
+Cloudflare Pages, nginx, ...). The site expects to be served from the root of a
+domain, like rif2rap.ljskatt.no. To host it under a sub-path instead, set
+`BASE_PATH` when building, e.g. `BASE_PATH=/rif2rap npm run build`.
