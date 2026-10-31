@@ -50,6 +50,22 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? `Unexpected error: ${e.message}` : String(e);
 }
 
+const IDPS_HEX_DIGITS = IDPS_SIZE * 2;
+
+/** Keeps only hex digits (uppercased, max 32) and dashes; dashes are separators and don't count. */
+function sanitizeIdpsInput(raw: string): string {
+  let out = "";
+  let digits = 0;
+  for (const ch of raw.trim().replace(/^0x/i, "").toUpperCase()) {
+    if (ch === "-") out += ch;
+    else if (/[0-9A-F]/.test(ch) && digits < IDPS_HEX_DIGITS) {
+      out += ch;
+      digits++;
+    }
+  }
+  return out;
+}
+
 type RifOutcome = { file: LoadedFile; result?: RapResult; error?: string };
 
 export default function Converter() {
@@ -64,6 +80,7 @@ export default function Converter() {
   const addFiles = useCallback(async (files: FileList | File[], forced?: Slot) => {
     const loaded = await Promise.all(Array.from(files).map(readFile));
     const ignored: string[] = [];
+    const badIdps: string[] = [];
     const newRifs: LoadedFile[] = [];
     for (const f of loaded) {
       const slot = forced ?? classify(f);
@@ -74,9 +91,7 @@ export default function Converter() {
           setIdpsText(toHex(parseIdps(f.bytes)));
           setIdpsSource(f.name);
         } catch {
-          // Keep the raw text so the validation message below explains the problem.
-          setIdpsText(new TextDecoder().decode(f.bytes).slice(0, 200));
-          setIdpsSource(f.name);
+          badIdps.push(f.name);
         }
       } else ignored.push(f.name);
     }
@@ -87,25 +102,27 @@ export default function Converter() {
         return [...byName.values()];
       });
     }
-    setNotice(
-      ignored.length
-        ? `Could not tell what ${ignored.join(", ")} ${ignored.length === 1 ? "is" : "are"}. Use the matching box instead.`
-        : null,
-    );
+    const notices: string[] = [];
+    if (ignored.length) {
+      notices.push(
+        `Could not tell what ${ignored.join(", ")} ${ignored.length === 1 ? "is" : "are"}. Use the matching box instead.`,
+      );
+    }
+    if (badIdps.length) {
+      notices.push(`${badIdps.join(", ")}: an IDPS file must be 16 bytes or contain 32 hex characters.`);
+    }
+    setNotice(notices.length ? notices.join(" ") : null);
   }, []);
 
   const idps = useMemo(() => {
-    if (!idpsText.trim()) return { value: null, error: null };
-    try {
-      const value = parseIdps(idpsText);
-      return {
-        value,
-        error: null,
-        warning: idpsLooksValid(value) ? null : "This doesn't look like a console IDPS (it should start with 00000001).",
-      };
-    } catch (e) {
-      return { value: null, error: errorMessage(e) };
-    }
+    const digits = idpsText.replace(/-/g, "").length;
+    if (digits !== IDPS_HEX_DIGITS) return { value: null, digits };
+    const value = parseIdps(idpsText);
+    return {
+      value,
+      digits,
+      warning: idpsLooksValid(value) ? null : "This doesn't look like a console IDPS (it should start with 00000001).",
+    };
   }, [idpsText]);
 
   const act = useMemo(() => {
@@ -230,7 +247,7 @@ export default function Converter() {
           <input
             value={idpsText}
             onChange={(e) => {
-              setIdpsText(e.target.value);
+              setIdpsText(sanitizeIdpsInput(e.target.value));
               setIdpsSource(null);
             }}
             placeholder="00000001008A000B14…"
@@ -239,8 +256,20 @@ export default function Converter() {
             className="w-full rounded-md border border-slate-700 bg-slate-950/60 px-2 py-1.5 font-mono text-xs text-slate-100 placeholder:text-slate-600 focus:border-sky-500 focus:outline-none"
           />
           {idpsSource && <p className="truncate text-xs text-slate-500">from {idpsSource}</p>}
-          {idps.error && <p className="text-xs text-rose-400">{idps.error}</p>}
+          {idpsText && !idps.value && (
+            <p className="text-xs text-slate-500">
+              {idps.digits}/{IDPS_HEX_DIGITS} hex characters
+            </p>
+          )}
           {idps.warning && <p className="text-xs text-amber-400">{idps.warning}</p>}
+          {idps.value && (
+            <button
+              onClick={() => download("idps.bin", idps.value)}
+              className="self-start text-xs text-sky-400 hover:text-sky-300 hover:underline"
+            >
+              Download idps.bin
+            </button>
+          )}
         </Step>
       </div>
 
