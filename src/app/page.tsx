@@ -2,7 +2,7 @@ import Converter from "@/components/Converter";
 
 export default function Home() {
   return (
-    <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-12 sm:py-16 xl:max-w-6xl">
+    <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-12 sm:py-16">
       <header className="mb-10">
         <h1 className="text-3xl font-bold tracking-tight text-slate-50 sm:text-4xl">rif2rap</h1>
         <p className="mt-3 max-w-2xl text-slate-400">

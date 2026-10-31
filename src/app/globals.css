@@ -5,17 +5,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* Scale the whole UI up on very large screens instead of leaving empty space. */
-@media (min-width: 1920px) {
-  html {
-    font-size: 112.5%;
-  }
-}
-
-@media (min-width: 2560px) {
-  html {
-    font-size: 125%;
-  }
+/* Everything is sized in rem, so growing the root font with the window zooms the whole page,
+   like browser zoom: 16px up to 1280px wide, then proportionally larger. */
+html {
+  font-size: clamp(16px, 1.25vw, 32px);
 }
 
 body {
