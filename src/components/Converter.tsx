@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { zipSync } from "fflate";
 import {
   ACT_DAT_SIZE,
@@ -186,22 +186,43 @@ export default function Converter() {
     download("raps.zip", zipSync(entries, { level: 0 }));
   };
 
-  const onDragEnter = (e: DragEvent) => {
-    e.preventDefault();
-    dragDepth.current++;
-    setDragging(true);
-  };
-  const onDragLeave = (e: DragEvent) => {
-    e.preventDefault();
-    dragDepth.current--;
-    if (dragDepth.current <= 0) setDragging(false);
-  };
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    dragDepth.current = 0;
-    setDragging(false);
-    if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
-  };
+  // Files can be dropped anywhere on the page, so a near miss never makes the browser open the file instead.
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files");
+    const onDragEnter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current++;
+      setDragging(true);
+    };
+    const onDragOver = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = "copy";
+    };
+    const onDragLeave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (dragDepth.current === 0) setDragging(false);
+    };
+    const onDrop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragging(false);
+      if (e.dataTransfer!.files.length) void addFiles(e.dataTransfer!.files);
+    };
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [addFiles]);
 
   const reset = () => {
     setRifs([]);
@@ -213,16 +234,10 @@ export default function Converter() {
   };
 
   return (
-    <div
-      onDragEnter={onDragEnter}
-      onDragLeave={onDragLeave}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={onDrop}
-      className="relative"
-    >
+    <div>
       {dragging && (
-        <div className="pointer-events-none absolute -inset-3 z-10 grid place-items-center rounded-2xl border-2 border-dashed border-sky-400 bg-sky-950/70 backdrop-blur-sm">
-          <p className="text-lg font-medium text-sky-100">Drop .rif, act.dat, IDPS or game files anywhere</p>
+        <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center border-4 border-dashed border-sky-400 bg-slate-950/80 backdrop-blur-sm">
+          <p className="text-lg font-medium text-sky-100">Drop .rif, act.dat, IDPS or game files</p>
         </div>
       )}
 
