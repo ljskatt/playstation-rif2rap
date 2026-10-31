@@ -5,6 +5,19 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Scale the whole UI up on very large screens instead of leaving empty space. */
+@media (min-width: 1920px) {
+  html {
+    font-size: 112.5%;
+  }
+}
+
+@media (min-width: 2560px) {
+  html {
+    font-size: 125%;
+  }
+}
+
 body {
   background: #020617;
   color: #e2e8f0;
