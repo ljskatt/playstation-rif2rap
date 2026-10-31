@@ -33,15 +33,6 @@ same way RPCS3 does:
 SDAT files and free-license content don't use a .rap, so they can't be used
 for the check. Only the first 1 MB of each game file is read.
 
-The SELF path can also be tested against real files: homebrew `EBOOT.BIN`s are
-free-license NPDRM SELFs, so they should validate with the free klicensee. No
-game files are included in this repo, so that test is skipped unless you point
-`REAL_SELF_DIR` at a folder of them:
-
-```bash
-REAL_SELF_DIR=./my-eboots npm test
-```
-
 ## Development
 
 ```bash
